@@ -1,0 +1,203 @@
+---
+title: "Coursera Practical Machine Learning Final Project"
+author: "Canchu Lin"
+date: "2/11/2020"
+output: html_document
+
+Overview
+In this project, I will use the dataset provided in the project handout to do the required tasks. The data consists of a Training data and a Testing data (to be used to test the selected model). The goal of the project is to predict the manner in which the group of enthusiastic volunteers who took measurements about themselves regularly to improve their health did the exercise. This is the “classe” variable in the training set. Any of the other variables may be used to predict the "classe".
+
+Acknowledgement: The dataset used in this project is graciously made available by Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; & Fuks, H. in their "Wearable Computing: Accelerometers’ Data Classification of Body Postures and Movements”.Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012.
+---
+### Install required packages
+
+``` {r}
+install.packages("caret")
+install.packages("e1071")
+install.packages("lattice")
+install.packages("ggplot2")
+install.packages("rpart")
+install.packages("rpart.plot")
+install.packages("RColorBrewer")
+install.packages("rattle")
+install.packages("randomForest")
+install.packages("corrplot")
+install.packages("gbm")
+install.packages("survival")
+install.packages("splines")
+install.packages("parallel")
+install.packages("plyr")
+library(caret)
+library(e1071)
+library(lattice)
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(corrplot)
+library(gbm)
+library(survival)
+library(splines)
+library(parallel)
+library(plyr)
+knitr::opts_chunk$set(echo = TRUE)
+```
+### Load Data
+```{r}
+TrainingRaw <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"), header=TRUE)
+dim(TrainingRaw)
+```
+```{r}
+TestingRaw <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),header=TRUE)
+dim(TestingRaw)
+```
+### Cleaning and tidying data---removing variables that contain missing values
+
+```{r}
+TrainingClean <- TrainingRaw[, colSums(is.na(TrainingRaw)) == 0]
+TestingClean <- TestingRaw[, colSums(is.na(TestingRaw)) == 0]
+dim(TrainingClean)
+```
+### Number of variables now reduced to 93
+```{r}
+dim(TestingClean)
+```
+### Number of variables in the Testing dataset is now reduced to 60
+
+### Further cleaning and tidying data by removing first seven variables as they provide information about the people who did the test and they have little impact on the dependent variable classe
+
+```{r}
+TrainingClean <- TrainingClean[, -c(1:7)]
+Testing <- TestingClean[, -c(1:7)]
+dim(TrainingClean)
+```
+
+### Number of variables now reduced to 86
+
+```{r}
+dim(Testing)
+```
+### Number of variables now reduced to 53
+
+### Splitting the TrainingClean data into two parts: Training, and CrossValiding
+```{r}
+set.seed(1234)
+inTrain <- createDataPartition(TrainingClean$classe, p=0.7, list=FALSE)
+Training <- TrainingClean[inTrain,]
+CrossValiding <- TrainingClean[-inTrain,]
+dim(Training)
+```
+```{r}
+dim(CrossValiding)
+```
+### Further cleaning by removing the variables that are near-zero-variance
+```{r}
+NZV <- nearZeroVar(Training)
+Training <- Training[, -NZV]
+CrossValiding <- CrossValiding[, -NZV]
+dim(Training)
+```
+```{r}
+dim(CrossValiding)
+```
+### Now the number of variables reduced to 53
+
+###### MODEL BUILDING
+For this project we will use three different algorithms, classification trees, random forests, and generalized boosted methods to predict the outcome.
+
+1. classification trees
+2. random forests
+3. Generalized Boosted Model
+
+### Train with classification tree
+```{r}
+trControl <- trainControl(method="cv", number=5)
+CTmodel <- train(classe~., data=Training, method="rpart", trControl=trControl)
+```
+### Show CTmodel tree
+```{r}
+fancyRpartPlot(CTmodel$finalModel)
+```
+### Cross-validate with classification tree
+```{r}
+TrainPred <- predict(CTmodel, newdata=CrossValiding)
+confMatCT <- confusionMatrix(CrossValiding$classe, TrainPred)
+```
+## Display the confusion matrix and model accuracy
+```{r}
+confMatCT$table
+```
+```{r}
+confMatCT$overall[1]
+```
+### The accuracy of this model is very low (about 49%). This means that the predictors will not predict the outcome variable "classe" very well. 
+
+### Train with random forests
+```{r}
+RFmodel <- train(classe~., data=Training, method="rf", trControl=trControl, verbose=FALSE)
+```
+```{r}
+print(RFmodel)
+```
+```{r}
+plot(RFmodel, main="Accuracy of Random Forest Model by Number of Predictors")
+```
+### Cross-validate with random forests
+```{r}
+TrainPred <- predict(RFmodel, newdata=CrossValiding)
+confMatRF <- confusionMatrix(CrossValiding$classe, TrainPred)
+```
+## Display the confusion matrix and model accuracy
+```{r}
+confMatRF$table
+```
+```{r}
+confMatRF$overall[1]
+```
+```{r}
+names(RFmodel$finalModel)
+```
+```{r}
+RFmodel$finalModel$classes
+```
+```{r}
+plot(RFmodel$finalModel, main ="Model Error of Random Forest Model by Number of Trees")
+```
+### With random forest, we reach an accuracy of 99.5% using cross-validation with 5 steps. This result is very exciting. But we want to see what we can get in terms of accuracy value with gradient boosting method.
+
+### Train with gradient boosting method
+```{r}
+GBMmodel <- train(classe~., data=Training, method="gbm", trControl=trControl, verbose=FALSE)
+print(GBMmodel)
+```
+```{r}
+plot(GBMmodel)
+```
+### Cross-validate with gradient boosting method
+```{r}
+TrainPred <- predict(GBMmodel, newdata=CrossValiding)
+confMatGBM <- confusionMatrix(CrossValiding$classe, TrainPred)
+confMatGBM$table
+```
+```{r}
+confMatGBM$overall[1]
+```
+### The GBM model has a 97% accuracy level, which is very high. But it is not as high as that of the random forest model.
+
+###### APPLYING BEST MODEL TO TESTING DATA
+###  Now we can see that the random forest model is the best one, based on accuracy value. We will then use it to predict the values of classe using the testing data set.
+
+```{r}
+Results <- predict(RFmodel, newdata=Testing)
+Results
+```
+
+
+
+
+
+
+
+
